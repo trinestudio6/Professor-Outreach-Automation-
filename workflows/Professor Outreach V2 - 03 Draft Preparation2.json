@@ -1,0 +1,655 @@
+{
+  "name": "Professor Outreach V2 - 03 Draft Preparation2",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes"
+            }
+          ]
+        }
+      },
+      "id": "9711dabc-70ca-4943-b3f2-02a93ed51b38",
+      "name": "Draft Worker Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -64,
+        288
+      ],
+      "disabled": true
+    },
+    {
+      "parameters": {},
+      "id": "8a407a07-9794-4ef4-a8f3-3c5283380d50",
+      "name": "Manual Draft Test",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -64,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH next_recipient AS (SELECT r.id FROM recipients r WHERE r.status='SELECTED' ORDER BY r.id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE recipients r SET status='ENRICHING', claimed_at=now(), attempt_count=attempt_count+1 FROM next_recipient n WHERE r.id=n.id RETURNING r.id AS recipient_id,r.campaign_id,r.professor_name,r.professor_email,r.university,r.canonical_profile_url,r.research_interest,r.evidence_json;",
+        "options": {}
+      },
+      "id": "2d374f71-0aeb-4401-9b92-c5c56fb84e34",
+      "name": "CONFIGURE - Atomically Claim Selected Recipient",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        176,
+        352
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "FI8y61d2Pi53FFl7",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT r.*,c.full_name AS candidate_name,c.base_cv_object_key,c.transcript_object_key,cp.domain FROM recipients r JOIN campaigns cp ON cp.id=r.campaign_id JOIN candidates c ON c.id=cp.candidate_id WHERE r.id=$1 AND r.status='ENRICHING';",
+        "options": {
+          "queryReplacement": "={{ [$json.recipient_id] }}"
+        }
+      },
+      "id": "2f60f4ea-ff34-4b17-b68f-810d6bde8d00",
+      "name": "CONFIGURE - Load Recipient and Candidate Context",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        416,
+        352
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "FI8y61d2Pi53FFl7",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{    'https://ynehejtasvjwjpawriqg.supabase.co'   + '/storage/v1/object/Documents/campaigns/'   + $json.campaign_id   + '/recipients/'   + $json.recipient_id   + '/tailored-cv.pdf' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/pdf"
+            },
+            {
+              "name": "apikey",
+              "value": "__REDACTED_ROTATE_SUPABASE_SERVICE_ROLE_KEY__"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer __REDACTED_ROTATE_SUPABASE_SERVICE_ROLE_KEY__"
+            },
+            {
+              "name": "x-upsert",
+              "value": "true"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "c41a3d94-0467-4961-8b20-51cdce03e8a3",
+      "name": "CONFIGURE - Store Tailored PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2528,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE public.recipients\nSET\n  status = 'REVIEW_REQUIRED',\n  draft_subject = $2,\n  draft_html_body = $3,\n  cv_summary = $4,\n  tailored_cv_object_key = $5,\n  template_version = $6,\n  validation_status = 'PASSED',\n  updated_at = NOW()\nWHERE id = $1\n  AND status = 'ENRICHING'\nRETURNING id, status, tailored_cv_object_key;\n\n\n",
+        "options": {
+          "queryReplacement": "=={{ [\n  $('Code in JavaScript1').item.json.recipient_id,\n  $('Code in JavaScript1').item.json.subject,\n  $('Code in JavaScript1').item.json.html_body,\n  $('Code in JavaScript1').item.json.cv_summary,\n  $('Code in JavaScript1').item.json.object_key,\n  $('Code in JavaScript1').item.json.template_version\n] }}\n"
+        }
+      },
+      "id": "58ce6039-49db-48bd-8fb9-f37093ad4f6b",
+      "name": "CONFIGURE - Mark Review Required",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3280,
+        352
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "FI8y61d2Pi53FFl7",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"contents\": [\n    {\n      \"role\": \"user\",\n      \"parts\": [\n        {\n          \"text\": \"Extract only verifiable evidence from the supplied information. Professor: {{$json.professor_name}}. University: {{$json.university}}. Profile URL: {{$json.canonical_profile_url || 'Not available'}}. Research interest: {{$json.research_interest}}. Candidate domain: {{$json.domain}}. No web-search tool is available. If no reliable source URL is supplied, return an empty evidence array. Never invent claims, sources, publications, affiliations, URLs, or emails. Return only valid JSON in this exact format: {\\\"evidence\\\":[{\\\"claim\\\":\\\"specific factual claim\\\",\\\"source_url\\\":\\\"https://...\\\",\\\"source_title\\\":\\\"source title\\\",\\\"excerpt\\\":\\\"short supporting excerpt\\\"}]}\"\n        }\n      ]\n    }\n  ],\n  \"generationConfig\": {\n    \"temperature\": 0.1,\n    \"maxOutputTokens\": 1200,\n    \"responseMimeType\": \"application/json\"\n  }\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "bb47a473-3980-4162-a853-8dfa6aaace10",
+      "name": "Retrieve Professor Evidence",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        656,
+        352
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "BMzqJmCIlzphpa5D",
+          "name": "Gemini API-03"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const parts =\n  $json.candidates?.[0]?.content?.parts ?? [];\n\nconst rawText = parts\n  .filter(part => typeof part.text === 'string')\n  .map(part => part.text)\n  .join('')\n  .trim();\n\nif (!rawText) {\n  throw new Error('EVIDENCE_RESPONSE_EMPTY');\n}\n\nconst cleaned = rawText\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/i, '')\n  .trim();\n\nlet parsed;\n\ntry {\n  parsed = JSON.parse(cleaned);\n} catch (error) {\n  throw new Error(\n    `EVIDENCE_JSON_INVALID: ${error.message}`\n  );\n}\n\nif (!Array.isArray(parsed.evidence)) {\n  throw new Error('EVIDENCE_ARRAY_MISSING');\n}\n\nfor (const item of parsed.evidence) {\n  if (\n    typeof item.claim !== 'string' ||\n    typeof item.source_url !== 'string'\n  ) {\n    throw new Error('EVIDENCE_ITEM_INVALID');\n  }\n\n  if (!/^https:\\/\\//i.test(item.source_url)) {\n    throw new Error('EVIDENCE_SOURCE_URL_INVALID');\n  }\n}\n\nreturn [\n  {\n    json: {\n      recipient_id: $('CONFIGURE - Load Recipient and Candidate Context').item.json.id,\n      evidence: parsed.evidence\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        352
+      ],
+      "id": "cf3177ec-84b7-414a-9c60-dbb789b4c6e3",
+      "name": "Parse Professor Evidence"
+    },
+    {
+      "parameters": {
+        "jsCode": "const evidenceData = $json;\n\nconst context = $('CONFIGURE - Load Recipient and Candidate Context')\n  .item\n  .json;\n\nconst objectKey = String(context.base_cv_object_key ?? '').trim();\n\nif (!objectKey) {\n  throw new Error('base_cv_object_key is missing from candidate context');\n}\n\nconst supabaseUrl = String($env.SUPABASE_URL ?? '').replace(/\\/$/, '');\n\nif (!supabaseUrl) {\n  throw new Error('SUPABASE_URL is missing');\n}\n\nconst bucket = 'Documents';\n\nconst encodedKey = objectKey\n  .split('/')\n  .map(part => encodeURIComponent(part))\n  .join('/');\n\nconst cvUrl =\n  `${supabaseUrl}/storage/v1/object/authenticated/${bucket}/${encodedKey}`;\n\nreturn [\n  {\n    json: {\n      ...context,\n      ...evidenceData,\n      cv_url: cvUrl\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        656
+      ],
+      "id": "975ecb26-b0b1-4b15-a0e8-1be96ad9192d",
+      "name": "Build Supabase CV URL"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.cv_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer __REDACTED_ROTATE_SUPABASE_SERVICE_ROLE_KEY__"
+            },
+            {
+              "name": "apikey",
+              "value": "Bearer __REDACTED_ROTATE_SUPABASE_SERVICE_ROLE_KEY__"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1328,
+        -64
+      ],
+      "id": "1500a89e-6dcc-4986-a2d6-5cf89345a2cc",
+      "name": "Download Base CV PDF",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "i7hPdqOcR6nmXCEe",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        1552,
+        -64
+      ],
+      "id": "2661bdbd-a7e4-4796-8e59-922ee2a11268",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rawText = String($json.text || '')\n  .replace(/\\r\\n/g, '\\n')\n  .replace(/[ \\t]+/g, ' ')\n  .replace(/\\n{3,}/g, '\\n\\n')\n  .trim();\n\nif (rawText.length < 300) {\n  throw new Error('Extracted CV text is too short or unreadable');\n}\n\nconst maxCharacters = 30000;\n\nreturn [\n  {\n    json: {\n      ...$('Build Supabase CV URL').item.json,\n      cv_text: rawText.slice(0, maxCharacters),\n      cv_text_truncated: rawText.length > maxCharacters\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1776,
+        -64
+      ],
+      "id": "1e4e5c63-541d-485d-a3ae-47971ee41a76",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://latexcompilertopdf.onrender.com/compile/pdf",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "__REDACTED_ROTATE_RENDER_API_KEY__"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  tex: String($json.tailored_cv ?? \"\")\n}) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          },
+          "timeout": 12000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1584,
+        352
+      ],
+      "id": "ab1a078a-77b0-44ef-b1ea-6d2c3e15927d",
+      "name": "Compile With Render",
+      "retryOnFail": true,
+      "waitBetweenTries": 1200,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "7Z5HxhfFXDZHrPp5",
+          "name": "Render API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-goog-api-key",
+              "value": "__REDACTED_ROTATE_GEMINI_API_KEY__"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  contents: [\n    {\n      role: \"user\",\n      parts: [\n        {\n          text: [\n            \"Create a truthful academic outreach draft.\",\n            \"Candidate: \" + ($json.candidate_name ?? \"\"),\n            \"CV text: \" + ($json.cv_text ?? $json.text ?? \"\"),\n            \"Professor: \" + ($json.professor_name ?? \"\"),\n            \"University: \" + ($json.university ?? \"\"),\n            \"Research interest: \" + ($json.research_interest ?? \"\"),\n            \"Evidence: \" + JSON.stringify($json.evidence ?? $json.evidence_json ?? {}),\n            \"Return only JSON with subject, html_body, cv_summary, professor_claims, and candidate_claims.\",\n            \"Return a single JSON object, not an array and with no wrapper key. Fill every field you can find in the CV text, and leave a field out if it isn't there.\",\n            \"Never invent facts, sources, URLs, emails, or affiliations.\"\n                      ].join(\"\\n\")\n        }\n      ]\n    }\n  ],\n  generationConfig: {\n    temperature: 0.2,\n    maxOutputTokens: 2500,\n    responseMimeType: \"application/json\"\n  }\n}) }}\n",
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2448,
+        -64
+      ],
+      "id": "dcb2971c-390e-4f4e-823a-7855d976fc5f",
+      "name": "Generate CV and Email Draft",
+      "retryOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "BMzqJmCIlzphpa5D",
+          "name": "Gemini API-03"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Render CV Latex').item.json;\nconst binary = { ...$input.first().binary };\nbinary.data = { ...binary.data, fileName: `tailored-cv-${ctx.recipient_id}.pdf`, fileExtension: 'pdf', mimeType: 'application/pdf' };\nreturn [{\n  json: {\n    recipient_id: ctx.recipient_id,\n    campaign_id: ctx.campaign_id,\n    subject: ctx.subject,\n    html_body: ctx.html_body,\n    cv_summary: ctx.cv_summary,\n    template_version: ctx.template_version,\n    object_key: `campaigns/${ctx.campaign_id}/recipients/${ctx.recipient_id}/tailored-cv.pdf`,\n  },\n  binary,\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1808,
+        352
+      ],
+      "id": "044bf5f7-09bb-4eb4-87e6-32d73f56d065",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": []
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  contents: [{ role: \"user\", parts: [{ text: [\n    \"Convert the CV text below into JSON. Copy facts exactly as written. Never add, infer, merge or embellish anything. Omit any field the CV does not contain.\",\n    \"Return only JSON with this shape: {\\\"name\\\":\\\"\\\",\\\"email\\\":\\\"\\\",\\\"phone\\\":\\\"\\\",\\\"location\\\":\\\"\\\",\\\"links\\\":[\\\"\\\"],\\\"education\\\":[{\\\"institution\\\":\\\"\\\",\\\"degree\\\":\\\"\\\",\\\"dates\\\":\\\"\\\",\\\"details\\\":[\\\"\\\"]}],\\\"experience\\\":[{\\\"organization\\\":\\\"\\\",\\\"role\\\":\\\"\\\",\\\"dates\\\":\\\"\\\",\\\"bullets\\\":[\\\"\\\"]}],\\\"projects\\\":[{\\\"name\\\":\\\"\\\",\\\"context\\\":\\\"\\\",\\\"bullets\\\":[\\\"\\\"]}],\\\"publications\\\":[\\\"\\\"],\\\"skills\\\":[{\\\"category\\\":\\\"\\\",\\\"items\\\":\\\"\\\"}],\\\"achievements\\\":[\\\"\\\"]}\",\n    \"CV text:\\n\" + ($json.cv_text ?? \"\")\n  ].join(\"\\n\") }] }],\n  generationConfig: { temperature: 0, maxOutputTokens: 8192, responseMimeType: \"application/json\" }\n}) }}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2000,
+        -64
+      ],
+      "id": "5f8bb013-e05c-4ff0-b337-3be9179238fb",
+      "name": "Structure CV",
+      "retryOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "BMzqJmCIlzphpa5D",
+          "name": "Gemini API-03"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const parts =\n  $json.candidates?.[0]?.content?.parts ?? [];\n\nconst rawText = parts\n  .map(part => String(part.text ?? ''))\n  .join('')\n  .trim();\n\nconst cleaned = rawText\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/i, '')\n  .trim();\n\nlet draft;\n\ntry {\n  draft = JSON.parse(cleaned);\n} catch (error) {\n  throw new Error(`Gemini draft is not valid JSON: ${error.message}`);\n}\n\nconst requiredFields = [\n  'subject',\n  'html_body',\n  'cv_summary',\n  'professor_claims',\n  'candidate_claims'\n];\n\nfor (const field of requiredFields) {\n  if (draft[field] === undefined) {\n    throw new Error(`Missing required field: ${field}`);\n  }\n}\n\nreturn [\n  {\n    json: {\n      ...$('Parse CV Structure').item.json,\n      ...draft\n    }\n  }\n\n\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2896,
+        -64
+      ],
+      "id": "53c9437e-f106-4bef-be4f-ad86c1f18c03",
+      "name": "Parse Gemini Draft"
+    },
+    {
+      "parameters": {
+        "jsCode": "const map = { '\\\\': '\\\\textbackslash{}', '&': '\\\\&', '%': '\\\\%', '$': '\\\\$', '#': '\\\\#', '_': '\\\\_', '{': '\\\\{', '}': '\\\\}', '~': '\\\\textasciitilde{}', '^': '\\\\textasciicircum{}' };\nconst esc = v => String(v ?? '').replace(/[\\\\&%$#_{}~^]/g, ch => map[ch]);\n\nconst cv = $json.cv_data ?? {};\nconst summary = String($json.cv_summary ?? '').trim();\nif (!cv.name) throw new Error('CV_DATA_MISSING_NAME');\nif (!summary) throw new Error('CV_SUMMARY_EMPTY');\n\nconst list = items => (items ?? []).length\n  ? '\\\\begin{itemize}\\\\setlength{\\\\itemsep}{1pt}\\\\setlength{\\\\topsep}{2pt}\\n' + items.map(i => '\\\\item ' + esc(i)).join('\\n') + '\\n\\\\end{itemize}\\n'\n  : '';\nconst head = (left, right) => '\\\\textbf{' + esc(left) + '}' + (right ? '\\\\hfill ' + esc(right) : '');\nconst section = (title, body) => body.trim() ? '\\\\section*{' + title + '}\\\\vspace{-6pt}\\\\hrule\\\\vspace{4pt}\\n' + body + '\\n' : '';\n\nconst education = (cv.education ?? []).map(e => head(e.institution, e.dates) + '\\\\\\\\\\n' + esc(e.degree) + '\\n' + list(e.details)).join('\\\\medskip\\n');\nconst experience = (cv.experience ?? []).map(x => head(x.organization, x.dates) + '\\\\\\\\\\n\\\\textit{' + esc(x.role) + '}\\n' + list(x.bullets)).join('\\\\medskip\\n');\nconst projects = (cv.projects ?? []).map(p => head(p.name, p.context) + '\\n' + list(p.bullets)).join('\\\\medskip\\n');\nconst skills = (cv.skills ?? []).map(s => '\\\\textbf{' + esc(s.category) + ':} ' + esc(s.items)).join('\\\\\\\\\\n');\nconst contact = [cv.location, cv.phone, cv.email, ...(cv.links ?? [])].filter(Boolean).map(esc).join(' \\\\quad|\\\\quad ');\n\nconst tex =\n  '\\\\documentclass[10pt]{article}\\n\\\\usepackage[margin=0.8in]{geometry}\\n\\\\usepackage{hyperref}\\n' +\n  '\\\\pagestyle{empty}\\n\\\\setlength{\\\\parindent}{0pt}\\n\\\\begin{document}\\n' +\n  '\\\\begin{center}{\\\\LARGE \\\\textbf{' + esc(cv.name) + '}}\\\\\\\\[4pt]' + contact + '\\\\end{center}\\n' +\n  section('SUMMARY', esc(summary)) +\n  section('EDUCATION', education) +\n  section('EXPERIENCE', experience) +\n  section('PROJECTS AND RESEARCH', projects) +\n  section('PUBLICATIONS', list(cv.publications)) +\n  section('SKILLS', skills) +\n  section('ACHIEVEMENTS', list(cv.achievements)) +\n  '\\\\end{document}\\n';\n\nreturn [{ json: { ...$json, template_version: 'cv-template-v2', tailored_cv: tex } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3344,
+        -64
+      ],
+      "id": "2d86ae26-a778-4bb2-ad15-545b4961ab67",
+      "name": "Render CV Latex"
+    },
+    {
+      "parameters": {
+        "jsCode": "const c = $json.candidates?.[0];\nconst text = (c?.content?.parts ?? []).filter(p => !p.thought).map(p => String(p.text ?? '')).join('').trim();\nif (!text) throw new Error(`CV_STRUCTURE_EMPTY (finishReason=${c?.finishReason ?? 'NO_CANDIDATE'})`);\nif (c?.finishReason === 'MAX_TOKENS') throw new Error('CV_STRUCTURE_TRUNCATED');\n\nlet cv;\ntry { cv = JSON.parse(text.replace(/^```json\\s*/i, '').replace(/```\\s*$/, '').trim()); }\ncatch (e) { throw new Error('CV_STRUCTURE_JSON_INVALID: ' + e.message); }\nif (!cv.name) throw new Error('CV_STRUCTURE_NAME_MISSING');\n\nconst base = $('Code in JavaScript').item.json;\nconst src = String(base.cv_text).toLowerCase().replace(/\\s+/g, ' ');\nconst mustExist = [cv.name, ...(cv.education ?? []).map(e => e.institution), ...(cv.experience ?? []).map(x => x.organization)].filter(Boolean);\nfor (const m of mustExist) {\n  if (!src.includes(String(m).toLowerCase().replace(/\\s+/g, ' '))) throw new Error('CV_STRUCTURE_NOT_IN_SOURCE: ' + m);\n}\nreturn [{ json: { ...base, cv_data: cv } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2224,
+        -64
+      ],
+      "id": "e21385e2-f557-452e-9b70-69aa924b5155",
+      "name": "Parse CV Structure"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Draft Worker Schedule": {
+      "main": [
+        [
+          {
+            "node": "CONFIGURE - Atomically Claim Selected Recipient",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Draft Test": {
+      "main": [
+        [
+          {
+            "node": "CONFIGURE - Atomically Claim Selected Recipient",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CONFIGURE - Atomically Claim Selected Recipient": {
+      "main": [
+        [
+          {
+            "node": "CONFIGURE - Load Recipient and Candidate Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CONFIGURE - Load Recipient and Candidate Context": {
+      "main": [
+        [
+          {
+            "node": "Retrieve Professor Evidence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CONFIGURE - Store Tailored PDF": {
+      "main": [
+        [
+          {
+            "node": "CONFIGURE - Mark Review Required",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retrieve Professor Evidence": {
+      "main": [
+        [
+          {
+            "node": "Parse Professor Evidence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Professor Evidence": {
+      "main": [
+        [
+          {
+            "node": "Build Supabase CV URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Supabase CV URL": {
+      "main": [
+        [
+          {
+            "node": "Download Base CV PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Base CV PDF": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Structure CV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compile With Render": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate CV and Email Draft": {
+      "main": [
+        [
+          {
+            "node": "Parse Gemini Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "CONFIGURE - Store Tailored PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structure CV": {
+      "main": [
+        [
+          {
+            "node": "Parse CV Structure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Gemini Draft": {
+      "main": [
+        [
+          {
+            "node": "Render CV Latex",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Render CV Latex": {
+      "main": [
+        [
+          {
+            "node": "Compile With Render",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse CV Structure": {
+      "main": [
+        [
+          {
+            "node": "Generate CV and Email Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "73ae3599-2af0-42b2-adc9-03e05df7e37d",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9aa505992673d559587f612c8c13c1ac10d77af2c314be032d6fd2eb82a72378"
+  },
+  "nodeGroups": [],
+  "id": "X4ALaaMwyO2DZ5Cz",
+  "tags": []
+}

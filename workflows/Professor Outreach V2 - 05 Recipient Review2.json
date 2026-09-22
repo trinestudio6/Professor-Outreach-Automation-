@@ -1,0 +1,473 @@
+{
+  "name": "Professor Outreach V2 - 05 Recipient Review2",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "v2-reviews-list",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "7fe39d36-793d-4135-b5b9-3389ab688d77",
+      "name": "List Reviews Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "v2-reviews-list"
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $json.query ?? {};\nconst headers = $json.headers ?? {};\nconst ownerId = String(headers['x-owner-id'] ?? $env.OUTREACH_DEFAULT_OWNER_ID ?? '').trim();\nconst candidateId = String(query.candidate_id ?? '').trim();\nconst campaignId = String(query.campaign_id ?? '').trim();\nif (!/^[0-9a-f-]{36}$/i.test(ownerId)) throw new Error('OWNER_ID_INVALID');\nif (candidateId && !/^[0-9a-f-]{36}$/i.test(candidateId)) throw new Error('CANDIDATE_ID_INVALID');\nif (campaignId && !/^[0-9a-f-]{36}$/i.test(campaignId)) throw new Error('CAMPAIGN_ID_INVALID');\nif (!candidateId && !campaignId) throw new Error('SCOPE_REQUIRED');\nreturn [{ json: { owner_id: ownerId, candidate_id: candidateId || null, campaign_id: campaignId || null } }];"
+      },
+      "id": "2f495b45-04f6-49fc-b72f-f78d40f94099",
+      "name": "Validate List Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT r.id AS recipient_id, r.campaign_id, r.professor_name, r.professor_email, r.university, r.canonical_profile_url, r.research_interest, r.evidence_json, r.approved_subject AS draft_subject, r.approved_html_body AS draft_html_body, r.approved_cv_object_key AS draft_cv_object_key, r.claimed_at AS enriched_at FROM recipients r JOIN campaigns cp ON cp.id = r.campaign_id JOIN candidates c ON c.id = cp.candidate_id WHERE r.status = 'REVIEW_REQUIRED' AND c.owner_id = $1 AND ($2::uuid IS NULL OR r.campaign_id = $2::uuid) AND ($3::uuid IS NULL OR cp.candidate_id = $3::uuid) ORDER BY r.claimed_at ASC NULLS LAST, r.id;",
+        "options": {
+          "queryReplacement": "={{ [$json.owner_id, $json.campaign_id, $json.candidate_id] }}"
+        }
+      },
+      "id": "2d070f12-432c-466d-bad2-30f0823a833c",
+      "name": "CONFIGURE - Query Pending Reviews",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        480,
+        0
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const recipients = $input.all().map(i => i.json);\nreturn [{ json: { count: recipients.length, recipients } }];"
+      },
+      "id": "57b99280-7051-4c05-b502-6e39b692a092",
+      "name": "Build Review Queue Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "4d3232c5-60ab-4205-852f-42bd706949bb",
+      "name": "Respond with Pending Reviews",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        960,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "v2-reviews-approve",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "ab3e67e2-5196-4bf8-acdf-85132d647d4f",
+      "name": "Approve Recipient Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        224
+      ],
+      "webhookId": "v2-reviews-approve"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body ?? {};\nconst headers = $json.headers ?? {};\nconst ownerId = String(headers['x-owner-id'] ?? $env.OUTREACH_DEFAULT_OWNER_ID ?? '').trim();\nconst recipientId = String(body.recipient_id ?? '').trim();\nif (!/^[0-9a-f-]{36}$/i.test(ownerId)) throw new Error('OWNER_ID_INVALID');\nif (!/^[0-9a-f-]{36}$/i.test(recipientId)) throw new Error('RECIPIENT_ID_INVALID');\nlet editedSubject = body.edited_subject != null ? String(body.edited_subject) : '';\nlet editedHtmlBody = body.edited_html_body != null ? String(body.edited_html_body) : '';\nif (editedSubject && (/[\\r\\n]/.test(editedSubject) || editedSubject.length > 160)) throw new Error('EDITED_SUBJECT_INVALID');\nif (editedHtmlBody && (!/^<p>[\\s\\S]*<\\/p>$/.test(editedHtmlBody.trim()) || /<(script|iframe|object|style)\\b/i.test(editedHtmlBody))) throw new Error('EDITED_HTML_BODY_INVALID');\nreturn [{ json: { owner_id: ownerId, recipient_id: recipientId, edited_subject: editedSubject, edited_html_body: editedHtmlBody } }];"
+      },
+      "id": "07274b4f-f1f9-4197-926b-5c60a9974a6f",
+      "name": "Validate Approve Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH target AS (SELECT r.id FROM recipients r JOIN campaigns cp ON cp.id = r.campaign_id JOIN candidates c ON c.id = cp.candidate_id WHERE r.id = $1 AND c.owner_id = $2 AND r.status = 'REVIEW_REQUIRED' FOR UPDATE OF r) UPDATE recipients r SET status = 'APPROVED', approved_subject = COALESCE(NULLIF($3, ''), r.approved_subject), approved_html_body = COALESCE(NULLIF($4, ''), r.approved_html_body) FROM target t WHERE r.id = t.id RETURNING r.id AS recipient_id, r.campaign_id, r.status, r.approved_subject, r.approved_html_body;",
+        "options": {
+          "queryReplacement": "={{ [$json.recipient_id, $json.owner_id, $json.edited_subject, $json.edited_html_body] }}"
+        }
+      },
+      "id": "8c0ad48d-e868-4549-9e96-ee329dccdc56",
+      "name": "CONFIGURE - Atomically Approve Recipient",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        480,
+        224
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ !!$json.recipient_id }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "347cb367-f405-4039-a6db-802e17f6aee0",
+      "name": "Was Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        720,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { approved: true, recipient_id: $json.recipient_id, status: $json.status } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "b86a86a9-535e-49f1-94a2-3a2ff9e391d0",
+      "name": "Respond Approved",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        960,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { approved: false, error: 'RECIPIENT_NOT_ELIGIBLE', message: 'Recipient not found, not owned by caller, or not in REVIEW_REQUIRED state.' } }}",
+        "options": {
+          "responseCode": 409
+        }
+      },
+      "id": "c1bac877-c5c8-4cee-b355-94da79f33387",
+      "name": "Respond Approve Conflict",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        960,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "v2-reviews-reject",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "88f7f63f-a054-49ed-a96d-661b728e30de",
+      "name": "Reject Recipient Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        464
+      ],
+      "webhookId": "v2-reviews-reject"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body ?? {};\nconst headers = $json.headers ?? {};\nconst ownerId = String(headers['x-owner-id'] ?? $env.OUTREACH_DEFAULT_OWNER_ID ?? '').trim();\nconst recipientId = String(body.recipient_id ?? '').trim();\nconst reason = String(body.reason ?? '').trim().slice(0, 500);\nif (!/^[0-9a-f-]{36}$/i.test(ownerId)) throw new Error('OWNER_ID_INVALID');\nif (!/^[0-9a-f-]{36}$/i.test(recipientId)) throw new Error('RECIPIENT_ID_INVALID');\nreturn [{ json: { owner_id: ownerId, recipient_id: recipientId, reason } }];"
+      },
+      "id": "c27af620-637b-4978-b5d6-c71ae7f21c0e",
+      "name": "Validate Reject Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH target AS (SELECT r.id FROM recipients r JOIN campaigns cp ON cp.id = r.campaign_id JOIN candidates c ON c.id = cp.candidate_id WHERE r.id = $1 AND c.owner_id = $2 AND r.status = 'REVIEW_REQUIRED' FOR UPDATE OF r) UPDATE recipients r SET status = 'DO_NOT_CONTACT', last_error_code = 'REJECTED_BY_REVIEWER', last_error_message = $3 FROM target t WHERE r.id = t.id RETURNING r.id AS recipient_id, r.campaign_id, r.status;",
+        "options": {
+          "queryReplacement": "={{ [$json.recipient_id, $json.owner_id, $json.reason] }}"
+        }
+      },
+      "id": "11088c8f-9fc7-4b41-9bdb-88e245d0237a",
+      "name": "CONFIGURE - Atomically Reject Recipient",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        480,
+        464
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ !!$json.recipient_id }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "48f3f0ba-d9cb-4df7-862d-f57ff7a0586f",
+      "name": "Was Rejected?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        720,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { rejected: true, recipient_id: $json.recipient_id, status: $json.status } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "11174666-5cf1-4c5f-9c54-efed1117c37a",
+      "name": "Respond Rejected",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        960,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { rejected: false, error: 'RECIPIENT_NOT_ELIGIBLE', message: 'Recipient not found, not owned by caller, or not in REVIEW_REQUIRED state.' } }}",
+        "options": {
+          "responseCode": 409
+        }
+      },
+      "id": "d66a906c-eda3-49cd-8e60-cf5b3538c3c5",
+      "name": "Respond Reject Conflict",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        960,
+        528
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "List Reviews Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate List Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate List Request": {
+      "main": [
+        [
+          {
+            "node": "CONFIGURE - Query Pending Reviews",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CONFIGURE - Query Pending Reviews": {
+      "main": [
+        [
+          {
+            "node": "Build Review Queue Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Review Queue Response": {
+      "main": [
+        [
+          {
+            "node": "Respond with Pending Reviews",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approve Recipient Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Approve Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Approve Request": {
+      "main": [
+        [
+          {
+            "node": "CONFIGURE - Atomically Approve Recipient",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CONFIGURE - Atomically Approve Recipient": {
+      "main": [
+        [
+          {
+            "node": "Was Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Was Approved?": {
+      "main": [
+        [
+          {
+            "node": "Respond Approved",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Approve Conflict",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reject Recipient Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Reject Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Reject Request": {
+      "main": [
+        [
+          {
+            "node": "CONFIGURE - Atomically Reject Recipient",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CONFIGURE - Atomically Reject Recipient": {
+      "main": [
+        [
+          {
+            "node": "Was Rejected?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Was Rejected?": {
+      "main": [
+        [
+          {
+            "node": "Respond Rejected",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Reject Conflict",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "4d166f09-febd-44d9-9a5c-210ee24c110f",
+  "meta": {
+    "instanceId": "9aa505992673d559587f612c8c13c1ac10d77af2c314be032d6fd2eb82a72378"
+  },
+  "nodeGroups": [],
+  "id": "FLvQDkVP61azMm1P",
+  "tags": []
+}

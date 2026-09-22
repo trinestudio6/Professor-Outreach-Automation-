@@ -1,0 +1,316 @@
+{
+  "name": "Professor Outreach V2 - 02 Professor Discovery2",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "v2-campaign-discovery",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "122d0ede-b0f6-4ec3-824e-3b5989586d04",
+      "name": "Campaign Discovery Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "c56f7557-8b30-4a31-a6e1-770d7c452aa4"
+    },
+    {
+      "parameters": {
+        "jsCode": "function generateUuid() {\n  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(\n    /[xy]/g,\n    function (character) {\n      const random = Math.random() * 16 | 0;\n      const value =\n        character === 'x'\n          ? random\n          : (random & 0x3) | 0x8;\n\n      return value.toString(16);\n    }\n  );\n}\n\nconst body = $json.body ?? {};\nconst headers = $json.headers ?? {};\n\nconst candidateId = String(\n  body.candidate_id ?? ''\n).trim();\n\nconst domain = String(\n  body.domain ?? ''\n).trim();\n\nconst countries = Array.isArray(body.countries)\n  ? body.countries\n      .slice(0, 10)\n      .map(country => String(country).trim())\n      .filter(Boolean)\n  : [];\n\nconst requestedLimit = Number(body.limit ?? 25);\n\nconst limit = Math.min(\n  Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 25, 1),\n  50\n);\n\nif (!/^[0-9a-f-]{36}$/i.test(candidateId)) {\n  throw new Error('CANDIDATE_ID_INVALID');\n}\n\nif (domain.length < 3 || domain.length > 160) {\n  throw new Error('DOMAIN_INVALID');\n}\n\nconst ownerId = String(\n  headers['x-owner-id'] ||\n  $env.OUTREACH_DEFAULT_OWNER_ID ||\n  ''\n).trim();\n\nif (!/^[0-9a-f-]{36}$/i.test(ownerId)) {\n  throw new Error('OWNER_ID_INVALID');\n}\n\nreturn [\n  {\n    json: {\n      campaign_id: generateUuid(),\n      candidate_id: candidateId,\n      owner_id: ownerId,\n      domain,\n      countries,\n      limit\n    }\n  }\n];"
+      },
+      "id": "c7771c3d-9a96-49aa-82b4-0ed7e12e1239",
+      "name": "Validate Campaign Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO campaigns(id,candidate_id,domain,status,daily_limit) SELECT $1,c.id,$2,'DRAFT',LEAST(10,25) FROM candidates c WHERE c.id=$3 AND c.owner_id=$4 RETURNING id AS campaign_id, candidate_id, domain;",
+        "options": {
+          "queryReplacement": "={{ [$json.campaign_id, $json.domain, $json.candidate_id, $json.owner_id] }}"
+        }
+      },
+      "id": "6703f782-645d-4d7a-804b-9a3c91626e44",
+      "name": "CONFIGURE - Authorize and Create Campaign",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        480,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "FI8y61d2Pi53FFl7",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"system_instruction\": {\n    \"parts\": [\n      {\n        \"text\": \"You are a professor suggestion service. Use existing knowledge only. Do not claim that information is current or verified. Never invent email addresses or URLs. Return valid JSON only.\"\n      }\n    ]\n  },\n  \"contents\": [\n    {\n      \"role\": \"user\",\n      \"parts\": [\n        {\n          \"text\": \"Suggest up to {{$json.limit}} professors relevant to this domain: {{$json.domain}}. Target countries: {{JSON.stringify($json.countries)}}. Return only JSON with a professors array. Each professor must contain name, email set to null, university, department set to null, profile_url set to null, research_interest, source_urls as an empty array, and verification_status set to UNVERIFIED. Do not guess emails or create URLs. These results require manual verification.\"\n        }\n      ]\n    }\n  ],\n  \"generationConfig\": {\n    \"temperature\": 0.2,\n    \"maxOutputTokens\": 2500\n  }\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "c010768b-e72c-4028-a1ce-f8e36ec79d09",
+      "name": "CONFIGURE - Discover from Authoritative Sources",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        720,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "xYc8rUKaDhNlQkGp",
+          "name": "Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const campaignId =\n  $('CONFIGURE - Authorize and Create Campaign').item.json.campaign_id;\n\nconst list = $json.professors;\n\nif (!Array.isArray(list)) {\n  throw new Error('DISCOVERY_RESPONSE_INVALID');\n}\n\nconst seen = new Set();\nconst out = [];\n\nfor (const professor of list) {\n  const name = String(professor.name ?? '').trim();\n  const university = String(professor.university ?? '').trim();\n\n  if (!name || !university) {\n    continue;\n  }\n\n  const emailValue =\n    professor.email === null ||\n    professor.email === undefined\n      ? null\n      : String(professor.email).trim().toLowerCase();\n\n  const email =\n    emailValue &&\n    /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(emailValue)\n      ? emailValue\n      : null;\n\n  const profileUrl =\n    professor.profile_url &&\n    /^https:\\/\\//i.test(String(professor.profile_url))\n      ? String(professor.profile_url).trim()\n      : null;\n\n  const sourceUrls = Array.isArray(professor.source_urls)\n    ? professor.source_urls\n        .map(url => String(url).trim())\n        .filter(url => /^https:\\/\\//i.test(url))\n    : [];\n\n  const researchInterest = String(\n    professor.research_interest ?? ''\n  ).trim();\n\n  const dedupeKey = profileUrl\n    ? profileUrl.toLowerCase()\n    : `${name.toLowerCase()}|${university.toLowerCase()}`;\n\n  if (seen.has(dedupeKey)) {\n    continue;\n  }\n\n  seen.add(dedupeKey);\n\n  out.push({\n    json: {\n      campaign_id: campaignId,\n      professor_name: name,\n      professor_email: email,\n      university,\n      canonical_profile_url: profileUrl,\n      research_interest: researchInterest,\n      evidence_json: JSON.stringify({\n        source_urls: sourceUrls,\n        verification_status: 'UNVERIFIED'\n      }),\n      status: 'NEEDS_VERIFICATION'\n    },\n    pairedItem: {\n      item: 0\n    }\n  });\n}\n\nif (!out.length) {\n  throw new Error('DISCOVERY_NO_VALID_RESULTS');\n}\n\nreturn out;"
+      },
+      "id": "281514f6-86fa-4e32-9ee4-044fb50a9426",
+      "name": "Normalize and Deduplicate Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1184,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO recipients(id,campaign_id,professor_name,professor_email,university,canonical_profile_url,research_interest,evidence_json,status) VALUES (gen_random_uuid(),$1,$2,$3,$4,$5,$6,$7::jsonb,'DISCOVERED') ON CONFLICT (campaign_id,professor_email) DO UPDATE SET professor_name=EXCLUDED.professor_name, university=EXCLUDED.university, canonical_profile_url=EXCLUDED.canonical_profile_url, research_interest=EXCLUDED.research_interest, evidence_json=EXCLUDED.evidence_json RETURNING id, professor_name, professor_email, university, canonical_profile_url, research_interest, status;",
+        "options": {
+          "queryReplacement": "={{ [$json.campaign_id, $json.professor_name, $json.professor_email, $json.university, $json.canonical_profile_url, $json.research_interest, $json.evidence_json] }}"
+        }
+      },
+      "id": "1d5466cb-218a-4191-8b35-081496663a3b",
+      "name": "CONFIGURE - Upsert Recipients",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1424,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "FI8y61d2Pi53FFl7",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const recipients = $input.all().map(i => i.json);\nreturn [{ json: { campaign_id: $('CONFIGURE - Authorize and Create Campaign').item.json.campaign_id, count: recipients.length, recipients } }];"
+      },
+      "id": "c1871096-8c78-450d-9c23-ae71251199e7",
+      "name": "Build Discovery Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1664,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 201
+        }
+      },
+      "id": "9c6781f3-e758-4467-a2e7-b572fb8a5d4e",
+      "name": "Respond with Candidates",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1904,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const rawText =\n  $json.candidates?.[0]?.content?.parts?.[0]?.text;\n\nif (!rawText) {\n  throw new Error('GEMINI_EMPTY_RESPONSE');\n}\n\nlet cleaned = String(rawText).trim();\n\ncleaned = cleaned\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/i, '')\n  .trim();\n\nlet parsed;\n\ntry {\n  parsed = JSON.parse(cleaned);\n} catch {\n  throw new Error('GEMINI_INVALID_JSON');\n}\n\nif (!Array.isArray(parsed.professors)) {\n  throw new Error('GEMINI_PROFESSORS_ARRAY_MISSING');\n}\n\nreturn [\n  {\n    json: {\n      professors: parsed.professors\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        944,
+        0
+      ],
+      "id": "90f3814a-f831-4fd3-aa14-5895469bd7fe",
+      "name": "Parse Gemini Professor Response"
+    }
+  ],
+  "pinData": {
+    "Campaign Discovery Webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "n8n.trinism.tech",
+            "user-agent": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.8655",
+            "content-length": "191",
+            "content-type": "application/json",
+            "expect": "100-continue",
+            "via": "1.1 Caddy",
+            "x-forwarded-for": "103.43.149.145",
+            "x-forwarded-host": "n8n.trinism.tech",
+            "x-forwarded-proto": "https",
+            "x-owner-id": "a0000000-0000-4000-8000-000000000000",
+            "accept-encoding": "gzip"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "candidate_id": "a0000000-0000-4000-8000-000000000001",
+            "domain": "power electronics",
+            "limit": 5,
+            "countries": [
+              "US"
+            ]
+          },
+          "webhookUrl": "https://n8n.trinism.tech/webhook-test/v2-campaign-discovery",
+          "executionMode": "test"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Campaign Discovery Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Campaign Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Campaign Request": {
+      "main": [
+        [
+          {
+            "node": "CONFIGURE - Authorize and Create Campaign",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CONFIGURE - Authorize and Create Campaign": {
+      "main": [
+        [
+          {
+            "node": "CONFIGURE - Discover from Authoritative Sources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CONFIGURE - Discover from Authoritative Sources": {
+      "main": [
+        [
+          {
+            "node": "Parse Gemini Professor Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize and Deduplicate Results": {
+      "main": [
+        [
+          {
+            "node": "CONFIGURE - Upsert Recipients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CONFIGURE - Upsert Recipients": {
+      "main": [
+        [
+          {
+            "node": "Build Discovery Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Discovery Response": {
+      "main": [
+        [
+          {
+            "node": "Respond with Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Gemini Professor Response": {
+      "main": [
+        [
+          {
+            "node": "Normalize and Deduplicate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "2167ed1c-6b28-48b7-8f9b-7eab9369c770",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9aa505992673d559587f612c8c13c1ac10d77af2c314be032d6fd2eb82a72378"
+  },
+  "nodeGroups": [],
+  "id": "ISU0f9AROAjgK1aQ",
+  "tags": []
+}

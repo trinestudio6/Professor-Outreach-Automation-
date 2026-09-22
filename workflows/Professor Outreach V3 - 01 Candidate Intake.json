@@ -1,0 +1,317 @@
+{
+  "name": "Professor Outreach V2 - 01 Candidate Intake2",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "v2-candidate-intake",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "f6acc1d3-e6df-42b5-8259-c345e01ab776",
+      "name": "Candidate Intake Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -960,
+        112
+      ],
+      "webhookId": "v2-candidate-intake"
+    },
+    {
+      "parameters": {
+        "jsCode": "function uuidv4() {\n  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {\n    const r = (Math.random() * 16) | 0;\n    const v = c === 'x' ? r : (r & 0x3) | 0x8;\n    return v.toString(16);\n  });\n}\n\nconst body = $json.body ?? {};\nlet name = String(body.full_name ?? '').trim();\nif (!name && body.name) name = String(body.name).trim();\n\nconst email = String(body.email ?? '').trim().toLowerCase();\nconst domain = String(body.domain ?? '').trim();\n\nif (!name || !email) throw new Error('INTAKE_REQUIRED_FIELD_MISSING');\nif (!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email)) throw new Error('INTAKE_EMAIL_INVALID');\n\nconst candidateId = uuidv4();\n\nreturn [{ \n  json: { \n    event_id: candidateId, \n    candidate_id: candidateId, \n    owner_id: $env.OUTREACH_DEFAULT_OWNER_ID || \"test-owner-id\", \n    full_name: name, \n    email: email,\n    domain: domain,\n    consent_at: new Date().toISOString(), \n    cv_file_name: 'base-cv.pdf' \n  } \n}];"
+      },
+      "id": "d4a0d231-ec2e-4471-a84e-877a4f68669f",
+      "name": "Validate and Normalize Intake",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH inserted AS ( INSERT INTO webhook_events(provider,event_id,status) VALUES ('tally',$1,'RECEIVED') ON CONFLICT (provider,event_id) DO NOTHING RETURNING event_id ) SELECT EXISTS (SELECT 1 FROM inserted) AS is_new, $1::text AS event_id;",
+        "options": {
+          "queryReplacement": "={{ [$json.event_id] }}"
+        }
+      },
+      "id": "cfde8825-eb90-487a-ba73-ab7cae4d3644",
+      "name": "Claim Webhook Event",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -480,
+        112
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "FI8y61d2Pi53FFl7",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.is_new }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "22e8edd3-ca31-4c8a-bb46-b602aaa5b377",
+      "name": "Is New Event?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -240,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Validate and Normalize Intake').item.json;\nconst file = $binary?.data || $binary?.cv;\nif (!file) throw new Error('CV_BINARY_MISSING');\nif (String(file.mimeType || '').toLowerCase() !== 'application/pdf') throw new Error('ONLY_PDF_CV_SUPPORTED');\n\nreturn [{ \n  json: input, \n  binary: { \n    data: { \n      ...file, \n      fileName: 'base-cv-' + input.candidate_id + '.pdf', \n      mimeType: 'application/pdf' \n    } \n  } \n}];"
+      },
+      "id": "779a4bfd-0778-4bec-a262-f94546534f6e",
+      "name": "Validate Downloaded PDF",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + '/storage/v1/object/Documents/candidates/' + $json.candidate_id + '/base-cv.pdf' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/pdf"
+            },
+            {
+              "name": "x-upsert",
+              "value": "false"
+            },
+            {
+              "name": "apikey",
+              "value": "__REDACTED_ROTATE_SUPABASE_SERVICE_ROLE_KEY__"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "id": "19cc9814-15c7-47f3-b5ae-4c2178ebe7a3",
+      "name": "Store CV in Supabase Storage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        480,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "i7hPdqOcR6nmXCEe",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO candidates(id,owner_id,full_name,email,consent_at,base_cv_object_key,base_cv_file_name,base_cv_mime_type,status) VALUES ($1,$2,$3,$4,$5,$6,$7,'application/pdf','RECEIVED') RETURNING id AS candidate_id,status;",
+        "options": {
+          "queryReplacement": "={{ [$('Validate and Normalize Intake').item.json.candidate_id, $('Validate and Normalize Intake').item.json.owner_id, $('Validate and Normalize Intake').item.json.full_name, $('Validate and Normalize Intake').item.json.email, $('Validate and Normalize Intake').item.json.consent_at, 'candidates/' + $('Validate and Normalize Intake').item.json.candidate_id + '/base-cv.pdf', $('Validate and Normalize Intake').item.json.cv_file_name] }}"
+        }
+      },
+      "id": "aa91dcce-45e2-4aa5-a7c4-d9533b894754",
+      "name": "Insert Candidate Record",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        720,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "FI8y61d2Pi53FFl7",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { accepted: true, candidate_id: $('Validate and Normalize Intake').item.json.candidate_id, status: 'RECEIVED' } }}",
+        "options": {
+          "responseCode": 202
+        }
+      },
+      "id": "b5bc6e65-4e99-4e77-a743-225877268264",
+      "name": "Respond Accepted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        960,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { accepted: true, duplicate: true } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "f8a91819-351f-40cf-a82a-dd2d5caf1f3e",
+      "name": "Respond Duplicate",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        224
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Candidate Intake Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate and Normalize Intake",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate and Normalize Intake": {
+      "main": [
+        [
+          {
+            "node": "Claim Webhook Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Webhook Event": {
+      "main": [
+        [
+          {
+            "node": "Is New Event?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is New Event?": {
+      "main": [
+        [
+          {
+            "node": "Validate Downloaded PDF",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Downloaded PDF": {
+      "main": [
+        [
+          {
+            "node": "Store CV in Supabase Storage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store CV in Supabase Storage": {
+      "main": [
+        [
+          {
+            "node": "Insert Candidate Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Candidate Record": {
+      "main": [
+        [
+          {
+            "node": "Respond Accepted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "2094525c-03a2-46ed-8672-cd9d196e96a5",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9aa505992673d559587f612c8c13c1ac10d77af2c314be032d6fd2eb82a72378"
+  },
+  "nodeGroups": [],
+  "id": "vZxB9ejsywIyQnux",
+  "tags": []
+}

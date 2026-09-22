@@ -1,0 +1,308 @@
+{
+  "name": "Professor Outreach V2 - 06 Campaign Actions2",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "v2-campaigns-activate",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "bdb01a44-a5a5-4120-86a4-7d75b031bf19",
+      "name": "Activate Campaign Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -960,
+        -48
+      ],
+      "webhookId": "v2-campaigns-activate"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body ?? {};\nconst headers = $json.headers ?? {};\nconst ownerId = String(headers['x-owner-id'] ?? $env.OUTREACH_DEFAULT_OWNER_ID ?? '').trim();\nconst campaignId = String(body.campaign_id ?? '').trim();\nif (!/^[0-9a-f-]{36}$/i.test(ownerId)) throw new Error('OWNER_ID_INVALID');\nif (!/^[0-9a-f-]{36}$/i.test(campaignId)) throw new Error('CAMPAIGN_ID_INVALID');\nreturn [{ json: { owner_id: ownerId, campaign_id: campaignId } }];"
+      },
+      "id": "94a97477-38dc-4cad-a8ad-2c9e1e8f82b3",
+      "name": "Validate Activate Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH target AS (SELECT cp.id FROM campaigns cp JOIN candidates c ON c.id = cp.candidate_id WHERE cp.id = $1 AND c.owner_id = $2 AND cp.status IN ('DRAFT','PAUSED') FOR UPDATE OF cp) UPDATE campaigns cp SET status = 'ACTIVE' FROM target t WHERE cp.id = t.id RETURNING cp.id AS campaign_id, cp.status;",
+        "options": {
+          "queryReplacement": "={{ [$json.campaign_id, $json.owner_id] }}"
+        }
+      },
+      "id": "3518278f-3cdc-4174-90b5-65a686ef0265",
+      "name": "CONFIGURE - Atomically Activate Campaign",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -480,
+        -48
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ !!$json.campaign_id }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "97c1788d-4a73-416b-81e4-8bc4c647283a",
+      "name": "Was Activated?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -240,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { activated: true, campaign_id: $json.campaign_id, status: $json.status } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "77a5c088-5a8e-4998-a550-7816a24379aa",
+      "name": "Respond Activated",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { activated: false, error: 'CAMPAIGN_NOT_ELIGIBLE', message: 'Campaign not found, not owned by caller, or not in DRAFT/PAUSED state.' } }}",
+        "options": {
+          "responseCode": 409
+        }
+      },
+      "id": "52142647-6d85-420c-8f1e-bb34cebc3579",
+      "name": "Respond Activate Conflict",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "v2-recipients-select",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "f33ebaf1-3d0b-4f5f-aaa0-fcaaaf5abf42",
+      "name": "Select Recipients Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -960,
+        208
+      ],
+      "webhookId": "v2-recipients-select"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body ?? {};\nconst headers = $json.headers ?? {};\nconst ownerId = String(headers['x-owner-id'] ?? $env.OUTREACH_DEFAULT_OWNER_ID ?? '').trim();\nconst campaignId = String(body.campaign_id ?? '').trim();\nconst recipientIds = Array.isArray(body.recipient_ids) ? body.recipient_ids.map(String) : [];\nif (!/^[0-9a-f-]{36}$/i.test(ownerId)) throw new Error('OWNER_ID_INVALID');\nif (!/^[0-9a-f-]{36}$/i.test(campaignId)) throw new Error('CAMPAIGN_ID_INVALID');\nif (!recipientIds.length || recipientIds.length > 100) throw new Error('RECIPIENT_IDS_INVALID');\nfor (const id of recipientIds) if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error('RECIPIENT_ID_INVALID');\nreturn [{ json: { owner_id: ownerId, campaign_id: campaignId, recipient_ids: recipientIds, requested_count: recipientIds.length } }];"
+      },
+      "id": "1f494009-001e-43c7-8117-0fa5706b5bbb",
+      "name": "Validate Select Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH target AS (SELECT r.id FROM recipients r JOIN campaigns cp ON cp.id = r.campaign_id JOIN candidates c ON c.id = cp.candidate_id WHERE r.campaign_id = $1 AND c.owner_id = $2 AND r.id = ANY($3::uuid[]) AND r.status = 'DISCOVERED' FOR UPDATE OF r) UPDATE recipients r SET status = 'SELECTED' FROM target t WHERE r.id = t.id RETURNING r.id AS recipient_id, r.status;",
+        "options": {
+          "queryReplacement": "={{ [$json.campaign_id, $json.owner_id, $json.recipient_ids] }}"
+        }
+      },
+      "id": "12c6c123-fe9f-405b-88fb-64fc18eac3d2",
+      "name": "CONFIGURE - Atomically Select Recipients",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -480,
+        208
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const requested = $('Validate Select Request').item.json.requested_count;\nconst selectedIds = $input.all().map(i => i.json).filter(j => j && j.recipient_id).map(j => j.recipient_id);\nreturn [{ json: { requested_count: requested, selected_count: selectedIds.length, selected_recipient_ids: selectedIds } }];"
+      },
+      "id": "ca2a8ddd-8afe-4617-9b9d-ab9d6570dded",
+      "name": "Build Select Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "575355a9-c0b2-4d08-801e-5ada4af97c42",
+      "name": "Respond Select Result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        208
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Activate Campaign Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Activate Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Activate Request": {
+      "main": [
+        [
+          {
+            "node": "CONFIGURE - Atomically Activate Campaign",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CONFIGURE - Atomically Activate Campaign": {
+      "main": [
+        [
+          {
+            "node": "Was Activated?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Was Activated?": {
+      "main": [
+        [
+          {
+            "node": "Respond Activated",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Activate Conflict",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select Recipients Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Select Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Select Request": {
+      "main": [
+        [
+          {
+            "node": "CONFIGURE - Atomically Select Recipients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CONFIGURE - Atomically Select Recipients": {
+      "main": [
+        [
+          {
+            "node": "Build Select Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Select Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Select Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "0d62796f-20eb-4757-b040-8c0af2d58358",
+  "meta": {
+    "instanceId": "9aa505992673d559587f612c8c13c1ac10d77af2c314be032d6fd2eb82a72378"
+  },
+  "nodeGroups": [],
+  "id": "zqutItvCMKeN3Obf",
+  "tags": []
+}

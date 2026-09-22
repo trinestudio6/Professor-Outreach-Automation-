@@ -1,0 +1,286 @@
+{
+  "name": "Professor Outreach V2 - 04 Approved Dispatch2",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes"
+            }
+          ]
+        }
+      },
+      "id": "122033d7-6664-4481-b45a-1548411999e3",
+      "name": "Dispatch Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "5e082efe-5599-4dc8-9b6f-017988d6446f",
+      "name": "Manual Dispatch Test",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH eligible AS (SELECT r.id FROM recipients r JOIN campaigns cp ON cp.id=r.campaign_id LEFT JOIN global_suppressions gs ON gs.normalized_email=lower(trim(r.professor_email)) WHERE r.status IN ('APPROVED','RETRYABLE_FAILED') AND coalesce(r.next_attempt_at,now())<=now() AND r.provider_message_id IS NULL AND gs.normalized_email IS NULL AND cp.status='ACTIVE' AND (SELECT count(*) FROM recipients sent WHERE sent.campaign_id=r.campaign_id AND sent.sent_at>=date_trunc('day',now())) < cp.daily_limit ORDER BY coalesce(r.next_attempt_at,'-infinity'),r.id FOR UPDATE OF r SKIP LOCKED LIMIT 1) UPDATE recipients r SET status='PROCESSING',claimed_at=now(),attempt_count=attempt_count+1 FROM eligible e WHERE r.id=e.id RETURNING r.id AS recipient_id,r.campaign_id,r.professor_name,r.professor_email,r.approved_subject,r.approved_html_body,r.approved_cv_object_key,r.approved_transcript_object_key,r.attempt_count;",
+        "options": {}
+      },
+      "id": "9287a1ea-12e1-4b69-bf5d-baa2aa5d92b7",
+      "name": "CONFIGURE - Atomically Claim Approved Recipient",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        240,
+        64
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "FI8y61d2Pi53FFl7",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $json;\nif (!r.recipient_id) return [];\nif (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(String(r.professor_email ?? ''))) throw new Error('DISPATCH_EMAIL_INVALID');\nif (!r.approved_subject || /[\\r\\n]/.test(r.approved_subject)) throw new Error('DISPATCH_SUBJECT_INVALID');\nif (!r.approved_html_body || !r.approved_cv_object_key) throw new Error('DISPATCH_ARTIFACT_MISSING');\nreturn [{ json: r }];"
+      },
+      "id": "b5704759-f7bd-49ae-924e-34cf960e5a8b",
+      "name": "Validate Approved Envelope",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const envelope = $('Validate Approved Envelope').item.json;\nconst binary = { ...$input.first().binary };\nif (!binary.data) throw new Error('CV_PDF_BINARY_MISSING');\nconst mime = String(binary.data.mimeType ?? '').toLowerCase();\nif (mime && mime !== 'application/pdf') throw new Error('CV_PDF_MIME_INVALID');\nbinary.cv_pdf = { ...binary.data, fileName: `CV_${envelope.recipient_id}.pdf`, fileExtension: 'pdf', mimeType: 'application/pdf' };\ndelete binary.data;\nreturn [{ json: envelope, binary }];\n\n"
+      },
+      "id": "ea869b3b-66ff-4f98-8f22-cbb180d57731",
+      "name": "Build Immutable Send Envelope",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.professor_email }}",
+        "subject": "={{ $json.approved_subject }}",
+        "message": "={{ $json.approved_html_body }}",
+        "options": {
+          "appendAttribution": false,
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {
+                "property": "cv_pdf"
+              }
+            ]
+          }
+        }
+      },
+      "id": "28d60bf8-3a28-4ca6-9590-981cf9da8d5a",
+      "name": "CONFIGURE - Send Approved Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1200,
+        64
+      ],
+      "webhookId": "dispatch-approved-v2",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "8tnLULfWTmscW315",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const envelope = $('Build Immutable Send Envelope').item.json;\nconst providerId = String($json.id ?? $json.messageId ?? $json.threadId ?? '').trim();\nif (!providerId) throw new Error('GMAIL_MESSAGE_ID_MISSING');\nreturn [{ json: { recipient_id: envelope.recipient_id, campaign_id: envelope.campaign_id, provider_message_id: providerId } }];"
+      },
+      "id": "faa2e66e-fdff-4259-b24d-8a2329f7d7ef",
+      "name": "Capture Provider Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE recipients SET status='SENT',sent_at=now(),provider_message_id=$2,claimed_at=NULL,next_attempt_at=NULL,last_error_code=NULL,last_error_message=NULL WHERE id=$1 AND status='PROCESSING' AND provider_message_id IS NULL RETURNING id AS recipient_id,campaign_id,status,sent_at,provider_message_id;",
+        "options": {
+          "queryReplacement": "={{ [$json.recipient_id, $json.provider_message_id] }}"
+        }
+      },
+      "id": "4c7743e1-f7c4-49f4-9655-2572490a0dbc",
+      "name": "CONFIGURE - Persist Sent Result",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1680,
+        64
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "FI8y61d2Pi53FFl7",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=={{ $env.SUPABASE_URL + '/storage/v1/object/authenticated/Documents/' + $json.approved_cv_object_key }}\n",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": []
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        704,
+        -112
+      ],
+      "id": "12f195b9-8ca2-40b0-b5b4-833035ef6a1e",
+      "name": "Download Base CV PDF",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "i7hPdqOcR6nmXCEe",
+          "name": "Header Auth account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Dispatch Schedule": {
+      "main": [
+        [
+          {
+            "node": "CONFIGURE - Atomically Claim Approved Recipient",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Dispatch Test": {
+      "main": [
+        [
+          {
+            "node": "CONFIGURE - Atomically Claim Approved Recipient",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CONFIGURE - Atomically Claim Approved Recipient": {
+      "main": [
+        [
+          {
+            "node": "Validate Approved Envelope",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Approved Envelope": {
+      "main": [
+        [
+          {
+            "node": "Download Base CV PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Immutable Send Envelope": {
+      "main": [
+        [
+          {
+            "node": "CONFIGURE - Send Approved Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CONFIGURE - Send Approved Gmail": {
+      "main": [
+        [
+          {
+            "node": "Capture Provider Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Capture Provider Result": {
+      "main": [
+        [
+          {
+            "node": "CONFIGURE - Persist Sent Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Base CV PDF": {
+      "main": [
+        [
+          {
+            "node": "Build Immutable Send Envelope",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "f4cc71f0-2a29-4c01-abe2-4605a55c4ef1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9aa505992673d559587f612c8c13c1ac10d77af2c314be032d6fd2eb82a72378"
+  },
+  "nodeGroups": [],
+  "id": "8hrBFwMrTHFvGkI0",
+  "tags": []
+}
