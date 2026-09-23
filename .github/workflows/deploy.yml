@@ -22,10 +22,10 @@ jobs:
 
       - name: Create build environment
         run: |
-          echo "VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }}" > .env
-          echo "VITE_DEFAULT_OWNER_ID=${{ secrets.VITE_DEFAULT_OWNER_ID }}" >> .env
-          echo "VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }}" >> .env
-          echo "VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }}" >> .env
+          echo "VITE_API_BASE_URL=https://n8n.trinism.tech/webhook" > .env
+          echo "VITE_DEFAULT_OWNER_ID=f47ac10b-58cc-4372-a567-0e02b2c3d479" >> .env
+          echo "VITE_SUPABASE_URL=https://ynehejtasvjwjpawriqg.supabase.co" >> .env
+          echo "VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InluZWhlanRhc3Zqd2pwYXdyaXFnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkzMjU3MzcsImV4cCI6MjEwNDkwMTczN30.eq2br1-EPPysngYdc9BZCA19KZyU26q9VbsHB_3ZmN8" >> .env
         working-directory: ./frontend
 
       - name: Build the React App
