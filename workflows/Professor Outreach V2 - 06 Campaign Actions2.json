@@ -20,14 +20,14 @@
     },
     {
       "parameters": {
-        "jsCode": "const body = $json.body ?? {};\nconst headers = $json.headers ?? {};\nconst ownerId = String(headers['x-owner-id'] ?? $env.OUTREACH_DEFAULT_OWNER_ID ?? '').trim();\nconst campaignId = String(body.campaign_id ?? '').trim();\nif (!/^[0-9a-f-]{36}$/i.test(ownerId)) throw new Error('OWNER_ID_INVALID');\nif (!/^[0-9a-f-]{36}$/i.test(campaignId)) throw new Error('CAMPAIGN_ID_INVALID');\nreturn [{ json: { owner_id: ownerId, campaign_id: campaignId } }];"
+        "jsCode": "const body = $json.body ?? {};\nconst headers = $json.headers ?? {};\nconst ownerId = String($json.verified_owner_id ?? '').trim();\nconst campaignId = String(body.campaign_id ?? '').trim();\nif (!/^[0-9a-f-]{36}$/i.test(ownerId)) throw new Error('OWNER_ID_INVALID');\nif (!/^[0-9a-f-]{36}$/i.test(campaignId)) throw new Error('CAMPAIGN_ID_INVALID');\nreturn [{ json: { owner_id: ownerId, campaign_id: campaignId } }];"
       },
       "id": "94a97477-38dc-4cad-a8ad-2c9e1e8f82b3",
       "name": "Validate Activate Request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -720,
+        -240,
         -48
       ]
     },
@@ -44,7 +44,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        -480,
+        0,
         -48
       ],
       "alwaysOutputData": true
@@ -78,7 +78,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        -240,
+        240,
         -48
       ]
     },
@@ -95,7 +95,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        0,
+        480,
         -96
       ]
     },
@@ -112,7 +112,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        0,
+        480,
         16
       ]
     },
@@ -135,14 +135,14 @@
     },
     {
       "parameters": {
-        "jsCode": "const body = $json.body ?? {};\nconst headers = $json.headers ?? {};\nconst ownerId = String(headers['x-owner-id'] ?? $env.OUTREACH_DEFAULT_OWNER_ID ?? '').trim();\nconst campaignId = String(body.campaign_id ?? '').trim();\nconst recipientIds = Array.isArray(body.recipient_ids) ? body.recipient_ids.map(String) : [];\nif (!/^[0-9a-f-]{36}$/i.test(ownerId)) throw new Error('OWNER_ID_INVALID');\nif (!/^[0-9a-f-]{36}$/i.test(campaignId)) throw new Error('CAMPAIGN_ID_INVALID');\nif (!recipientIds.length || recipientIds.length > 100) throw new Error('RECIPIENT_IDS_INVALID');\nfor (const id of recipientIds) if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error('RECIPIENT_ID_INVALID');\nreturn [{ json: { owner_id: ownerId, campaign_id: campaignId, recipient_ids: recipientIds, requested_count: recipientIds.length } }];"
+        "jsCode": "const body = $json.body ?? {};\nconst headers = $json.headers ?? {};\nconst ownerId = String($json.verified_owner_id ?? '').trim();\nconst campaignId = String(body.campaign_id ?? '').trim();\nconst recipientIds = Array.isArray(body.recipient_ids) ? body.recipient_ids.map(String) : [];\nif (!/^[0-9a-f-]{36}$/i.test(ownerId)) throw new Error('OWNER_ID_INVALID');\nif (!/^[0-9a-f-]{36}$/i.test(campaignId)) throw new Error('CAMPAIGN_ID_INVALID');\nif (!recipientIds.length || recipientIds.length > 100) throw new Error('RECIPIENT_IDS_INVALID');\nfor (const id of recipientIds) if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error('RECIPIENT_ID_INVALID');\nreturn [{ json: { owner_id: ownerId, campaign_id: campaignId, recipient_ids: recipientIds, requested_count: recipientIds.length } }];"
       },
       "id": "1f494009-001e-43c7-8117-0fa5706b5bbb",
       "name": "Validate Select Request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -720,
+        -240,
         208
       ]
     },
@@ -159,7 +159,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        -480,
+        0,
         208
       ],
       "alwaysOutputData": true
@@ -173,7 +173,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -240,
+        240,
         208
       ]
     },
@@ -190,7 +190,103 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        0,
+        480,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL + '/auth/v1/user' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $json.headers.authorization || 'Bearer none' }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "9648f7ef-841c-4be1-ac6f-3dfdd7f27a1b",
+      "name": "Verify User - Activate Campaign",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -720,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const res = $input.first().json;\nconst user = res.body ?? {};\nif (res.statusCode !== 200 || !/^[0-9a-f-]{36}$/i.test(String(user.id ?? ''))) {\n  throw new Error('AUTH_INVALID');\n}\nconst original = $('Activate Campaign Webhook').first();\nconst out = { json: { ...original.json, verified_owner_id: user.id } };\nif (original.binary) out.binary = original.binary;\nreturn [out];"
+      },
+      "id": "a5d90c2d-b90d-42cc-9fed-645e9cad7879",
+      "name": "Resolve Owner - Activate Campaign",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL + '/auth/v1/user' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $json.headers.authorization || 'Bearer none' }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "8cd1fabc-0f3d-4125-a4b6-819c53d494ab",
+      "name": "Verify User - Select Recipients",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -720,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const res = $input.first().json;\nconst user = res.body ?? {};\nif (res.statusCode !== 200 || !/^[0-9a-f-]{36}$/i.test(String(user.id ?? ''))) {\n  throw new Error('AUTH_INVALID');\n}\nconst original = $('Select Recipients Webhook').first();\nconst out = { json: { ...original.json, verified_owner_id: user.id } };\nif (original.binary) out.binary = original.binary;\nreturn [out];"
+      },
+      "id": "0dd6aa6f-ebb4-482c-82e5-fd65213aad6b",
+      "name": "Resolve Owner - Select Recipients",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
         208
       ]
     }
@@ -201,7 +297,7 @@
       "main": [
         [
           {
-            "node": "Validate Activate Request",
+            "node": "Verify User - Activate Campaign",
             "type": "main",
             "index": 0
           }
@@ -252,7 +348,7 @@
       "main": [
         [
           {
-            "node": "Validate Select Request",
+            "node": "Verify User - Select Recipients",
             "type": "main",
             "index": 0
           }
@@ -286,6 +382,50 @@
         [
           {
             "node": "Respond Select Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify User - Activate Campaign": {
+      "main": [
+        [
+          {
+            "node": "Resolve Owner - Activate Campaign",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Owner - Activate Campaign": {
+      "main": [
+        [
+          {
+            "node": "Validate Activate Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify User - Select Recipients": {
+      "main": [
+        [
+          {
+            "node": "Resolve Owner - Select Recipients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Owner - Select Recipients": {
+      "main": [
+        [
+          {
+            "node": "Validate Select Request",
             "type": "main",
             "index": 0
           }

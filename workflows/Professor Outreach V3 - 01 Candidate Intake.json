@@ -22,14 +22,14 @@
     },
     {
       "parameters": {
-        "jsCode": "function uuidv4() {\n  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {\n    const r = (Math.random() * 16) | 0;\n    const v = c === 'x' ? r : (r & 0x3) | 0x8;\n    return v.toString(16);\n  });\n}\n\nconst body = $json.body ?? {};\nlet name = String(body.full_name ?? '').trim();\nif (!name && body.name) name = String(body.name).trim();\n\nconst email = String(body.email ?? '').trim().toLowerCase();\nconst domain = String(body.domain ?? '').trim();\n\nif (!name || !email) throw new Error('INTAKE_REQUIRED_FIELD_MISSING');\nif (!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email)) throw new Error('INTAKE_EMAIL_INVALID');\n\nconst candidateId = uuidv4();\n\nreturn [{ \n  json: { \n    event_id: candidateId, \n    candidate_id: candidateId, \n    owner_id: $env.OUTREACH_DEFAULT_OWNER_ID || \"test-owner-id\", \n    full_name: name, \n    email: email,\n    domain: domain,\n    consent_at: new Date().toISOString(), \n    cv_file_name: 'base-cv.pdf' \n  } \n}];"
+        "jsCode": "function uuidv4() {\n  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {\n    const r = (Math.random() * 16) | 0;\n    const v = c === 'x' ? r : (r & 0x3) | 0x8;\n    return v.toString(16);\n  });\n}\n\nconst body = $json.body ?? {};\nlet name = String(body.full_name ?? '').trim();\nif (!name && body.name) name = String(body.name).trim();\n\nconst email = String(body.email ?? '').trim().toLowerCase();\nconst domain = String(body.domain ?? '').trim();\n\nif (!name || !email) throw new Error('INTAKE_REQUIRED_FIELD_MISSING');\nif (!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email)) throw new Error('INTAKE_EMAIL_INVALID');\n\nconst candidateId = uuidv4();\n\nreturn [{ \n  json: { \n    event_id: candidateId, \n    candidate_id: candidateId, \n    owner_id: $json.verified_owner_id, \n    full_name: name, \n    email: email,\n    domain: domain,\n    consent_at: new Date().toISOString(), \n    cv_file_name: 'base-cv.pdf' \n  } \n}];"
       },
       "id": "d4a0d231-ec2e-4471-a84e-877a4f68669f",
       "name": "Validate and Normalize Intake",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -720,
+        -240,
         112
       ]
     },
@@ -46,7 +46,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        -480,
+        0,
         112
       ],
       "credentials": {
@@ -85,7 +85,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        -240,
+        240,
         112
       ]
     },
@@ -98,7 +98,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        240,
+        720,
         0
       ]
     },
@@ -143,7 +143,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        480,
+        960,
         0
       ],
       "retryOnFail": true,
@@ -169,7 +169,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        720,
+        1200,
         0
       ],
       "credentials": {
@@ -192,7 +192,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        960,
+        1440,
         0
       ]
     },
@@ -209,8 +209,56 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        0,
+        480,
         224
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL + '/auth/v1/user' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $json.headers.authorization || 'Bearer none' }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "a2327f8a-4278-41ab-ac42-48c53d0dfe62",
+      "name": "Verify User - Candidate Intake",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -720,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const res = $input.first().json;\nconst user = res.body ?? {};\nif (res.statusCode !== 200 || !/^[0-9a-f-]{36}$/i.test(String(user.id ?? ''))) {\n  throw new Error('AUTH_INVALID');\n}\nconst original = $('Candidate Intake Webhook').first();\nconst out = { json: { ...original.json, verified_owner_id: user.id } };\nif (original.binary) out.binary = original.binary;\nreturn [out];"
+      },
+      "id": "39b49053-a524-4943-86da-e26fe2bc1a7c",
+      "name": "Resolve Owner - Candidate Intake",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        112
       ]
     }
   ],
@@ -220,7 +268,7 @@
       "main": [
         [
           {
-            "node": "Validate and Normalize Intake",
+            "node": "Verify User - Candidate Intake",
             "type": "main",
             "index": 0
           }
@@ -294,6 +342,28 @@
         [
           {
             "node": "Respond Accepted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify User - Candidate Intake": {
+      "main": [
+        [
+          {
+            "node": "Resolve Owner - Candidate Intake",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Owner - Candidate Intake": {
+      "main": [
+        [
+          {
+            "node": "Validate and Normalize Intake",
             "type": "main",
             "index": 0
           }

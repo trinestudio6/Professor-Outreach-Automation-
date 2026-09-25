@@ -20,14 +20,14 @@
     },
     {
       "parameters": {
-        "jsCode": "function generateUuid() {\n  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(\n    /[xy]/g,\n    function (character) {\n      const random = Math.random() * 16 | 0;\n      const value =\n        character === 'x'\n          ? random\n          : (random & 0x3) | 0x8;\n\n      return value.toString(16);\n    }\n  );\n}\n\nconst body = $json.body ?? {};\nconst headers = $json.headers ?? {};\n\nconst candidateId = String(\n  body.candidate_id ?? ''\n).trim();\n\nconst domain = String(\n  body.domain ?? ''\n).trim();\n\nconst countries = Array.isArray(body.countries)\n  ? body.countries\n      .slice(0, 10)\n      .map(country => String(country).trim())\n      .filter(Boolean)\n  : [];\n\nconst requestedLimit = Number(body.limit ?? 25);\n\nconst limit = Math.min(\n  Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 25, 1),\n  50\n);\n\nif (!/^[0-9a-f-]{36}$/i.test(candidateId)) {\n  throw new Error('CANDIDATE_ID_INVALID');\n}\n\nif (domain.length < 3 || domain.length > 160) {\n  throw new Error('DOMAIN_INVALID');\n}\n\nconst ownerId = String(\n  headers['x-owner-id'] ||\n  $env.OUTREACH_DEFAULT_OWNER_ID ||\n  ''\n).trim();\n\nif (!/^[0-9a-f-]{36}$/i.test(ownerId)) {\n  throw new Error('OWNER_ID_INVALID');\n}\n\nreturn [\n  {\n    json: {\n      campaign_id: generateUuid(),\n      candidate_id: candidateId,\n      owner_id: ownerId,\n      domain,\n      countries,\n      limit\n    }\n  }\n];"
+        "jsCode": "function generateUuid() {\n  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(\n    /[xy]/g,\n    function (character) {\n      const random = Math.random() * 16 | 0;\n      const value =\n        character === 'x'\n          ? random\n          : (random & 0x3) | 0x8;\n\n      return value.toString(16);\n    }\n  );\n}\n\nconst body = $json.body ?? {};\nconst headers = $json.headers ?? {};\n\nconst candidateId = String(\n  body.candidate_id ?? ''\n).trim();\n\nconst domain = String(\n  body.domain ?? ''\n).trim();\n\nconst countries = Array.isArray(body.countries)\n  ? body.countries\n      .slice(0, 10)\n      .map(country => String(country).trim())\n      .filter(Boolean)\n  : [];\n\nconst requestedLimit = Number(body.limit ?? 25);\n\nconst limit = Math.min(\n  Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 25, 1),\n  50\n);\n\nif (!/^[0-9a-f-]{36}$/i.test(candidateId)) {\n  throw new Error('CANDIDATE_ID_INVALID');\n}\n\nif (domain.length < 3 || domain.length > 160) {\n  throw new Error('DOMAIN_INVALID');\n}\n\nconst ownerId = String($json.verified_owner_id ?? '').trim();\n\nif (!/^[0-9a-f-]{36}$/i.test(ownerId)) {\n  throw new Error('OWNER_ID_INVALID');\n}\n\nreturn [\n  {\n    json: {\n      campaign_id: generateUuid(),\n      candidate_id: candidateId,\n      owner_id: ownerId,\n      domain,\n      countries,\n      limit\n    }\n  }\n];"
       },
       "id": "c7771c3d-9a96-49aa-82b4-0ed7e12e1239",
       "name": "Validate Campaign Request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        240,
+        720,
         0
       ]
     },
@@ -44,7 +44,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        480,
+        960,
         0
       ],
       "credentials": {
@@ -81,7 +81,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        720,
+        1200,
         0
       ],
       "retryOnFail": true,
@@ -103,7 +103,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1184,
+        1664,
         0
       ]
     },
@@ -120,7 +120,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        1424,
+        1904,
         0
       ],
       "credentials": {
@@ -139,7 +139,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1664,
+        2144,
         0
       ]
     },
@@ -156,7 +156,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        1904,
+        2384,
         0
       ]
     },
@@ -167,55 +167,68 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        944,
+        1424,
         0
       ],
       "id": "90f3814a-f831-4fd3-aa14-5895469bd7fe",
       "name": "Parse Gemini Professor Response"
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL + '/auth/v1/user' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $json.headers.authorization || 'Bearer none' }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "22486242-5514-47a6-ba9a-fcc19b1b0610",
+      "name": "Verify User - Campaign Discovery",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const res = $input.first().json;\nconst user = res.body ?? {};\nif (res.statusCode !== 200 || !/^[0-9a-f-]{36}$/i.test(String(user.id ?? ''))) {\n  throw new Error('AUTH_INVALID');\n}\nconst original = $('Campaign Discovery Webhook').first();\nconst out = { json: { ...original.json, verified_owner_id: user.id } };\nif (original.binary) out.binary = original.binary;\nreturn [out];"
+      },
+      "id": "d554f35c-a73c-4861-8ae2-fba631f78aed",
+      "name": "Resolve Owner - Campaign Discovery",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ]
     }
   ],
-  "pinData": {
-    "Campaign Discovery Webhook": [
-      {
-        "json": {
-          "headers": {
-            "host": "n8n.trinism.tech",
-            "user-agent": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.8655",
-            "content-length": "191",
-            "content-type": "application/json",
-            "expect": "100-continue",
-            "via": "1.1 Caddy",
-            "x-forwarded-for": "103.43.149.145",
-            "x-forwarded-host": "n8n.trinism.tech",
-            "x-forwarded-proto": "https",
-            "x-owner-id": "a0000000-0000-4000-8000-000000000000",
-            "accept-encoding": "gzip"
-          },
-          "params": {},
-          "query": {},
-          "body": {
-            "candidate_id": "a0000000-0000-4000-8000-000000000001",
-            "domain": "power electronics",
-            "limit": 5,
-            "countries": [
-              "US"
-            ]
-          },
-          "webhookUrl": "https://n8n.trinism.tech/webhook-test/v2-campaign-discovery",
-          "executionMode": "test"
-        },
-        "pairedItem": {
-          "item": 0
-        }
-      }
-    ]
-  },
+  "pinData": {},
   "connections": {
     "Campaign Discovery Webhook": {
       "main": [
         [
           {
-            "node": "Validate Campaign Request",
+            "node": "Verify User - Campaign Discovery",
             "type": "main",
             "index": 0
           }
@@ -293,6 +306,28 @@
         [
           {
             "node": "Normalize and Deduplicate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify User - Campaign Discovery": {
+      "main": [
+        [
+          {
+            "node": "Resolve Owner - Campaign Discovery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Owner - Campaign Discovery": {
+      "main": [
+        [
+          {
+            "node": "Validate Campaign Request",
             "type": "main",
             "index": 0
           }

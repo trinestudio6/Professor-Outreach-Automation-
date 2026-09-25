@@ -19,14 +19,14 @@
     },
     {
       "parameters": {
-        "jsCode": "const query = $json.query ?? {};\nconst headers = $json.headers ?? {};\nconst ownerId = String(headers['x-owner-id'] ?? $env.OUTREACH_DEFAULT_OWNER_ID ?? '').trim();\nconst candidateId = String(query.candidate_id ?? '').trim();\nconst campaignId = String(query.campaign_id ?? '').trim();\nif (!/^[0-9a-f-]{36}$/i.test(ownerId)) throw new Error('OWNER_ID_INVALID');\nif (candidateId && !/^[0-9a-f-]{36}$/i.test(candidateId)) throw new Error('CANDIDATE_ID_INVALID');\nif (campaignId && !/^[0-9a-f-]{36}$/i.test(campaignId)) throw new Error('CAMPAIGN_ID_INVALID');\nif (!candidateId && !campaignId) throw new Error('SCOPE_REQUIRED');\nreturn [{ json: { owner_id: ownerId, candidate_id: candidateId || null, campaign_id: campaignId || null } }];"
+        "jsCode": "const query = $json.query ?? {};\nconst headers = $json.headers ?? {};\nconst ownerId = String($json.verified_owner_id ?? '').trim();\nconst candidateId = String(query.candidate_id ?? '').trim();\nconst campaignId = String(query.campaign_id ?? '').trim();\nif (!/^[0-9a-f-]{36}$/i.test(ownerId)) throw new Error('OWNER_ID_INVALID');\nif (candidateId && !/^[0-9a-f-]{36}$/i.test(candidateId)) throw new Error('CANDIDATE_ID_INVALID');\nif (campaignId && !/^[0-9a-f-]{36}$/i.test(campaignId)) throw new Error('CAMPAIGN_ID_INVALID');\nif (!candidateId && !campaignId) throw new Error('SCOPE_REQUIRED');\nreturn [{ json: { owner_id: ownerId, candidate_id: candidateId || null, campaign_id: campaignId || null } }];"
       },
       "id": "2f495b45-04f6-49fc-b72f-f78d40f94099",
       "name": "Validate List Request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        240,
+        720,
         0
       ]
     },
@@ -43,7 +43,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        480,
+        960,
         0
       ],
       "alwaysOutputData": true
@@ -57,7 +57,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        720,
+        1200,
         0
       ]
     },
@@ -74,7 +74,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        960,
+        1440,
         0
       ]
     },
@@ -97,14 +97,14 @@
     },
     {
       "parameters": {
-        "jsCode": "const body = $json.body ?? {};\nconst headers = $json.headers ?? {};\nconst ownerId = String(headers['x-owner-id'] ?? $env.OUTREACH_DEFAULT_OWNER_ID ?? '').trim();\nconst recipientId = String(body.recipient_id ?? '').trim();\nif (!/^[0-9a-f-]{36}$/i.test(ownerId)) throw new Error('OWNER_ID_INVALID');\nif (!/^[0-9a-f-]{36}$/i.test(recipientId)) throw new Error('RECIPIENT_ID_INVALID');\nlet editedSubject = body.edited_subject != null ? String(body.edited_subject) : '';\nlet editedHtmlBody = body.edited_html_body != null ? String(body.edited_html_body) : '';\nif (editedSubject && (/[\\r\\n]/.test(editedSubject) || editedSubject.length > 160)) throw new Error('EDITED_SUBJECT_INVALID');\nif (editedHtmlBody && (!/^<p>[\\s\\S]*<\\/p>$/.test(editedHtmlBody.trim()) || /<(script|iframe|object|style)\\b/i.test(editedHtmlBody))) throw new Error('EDITED_HTML_BODY_INVALID');\nreturn [{ json: { owner_id: ownerId, recipient_id: recipientId, edited_subject: editedSubject, edited_html_body: editedHtmlBody } }];"
+        "jsCode": "const body = $json.body ?? {};\nconst headers = $json.headers ?? {};\nconst ownerId = String($json.verified_owner_id ?? '').trim();\nconst recipientId = String(body.recipient_id ?? '').trim();\nif (!/^[0-9a-f-]{36}$/i.test(ownerId)) throw new Error('OWNER_ID_INVALID');\nif (!/^[0-9a-f-]{36}$/i.test(recipientId)) throw new Error('RECIPIENT_ID_INVALID');\nlet editedSubject = body.edited_subject != null ? String(body.edited_subject) : '';\nlet editedHtmlBody = body.edited_html_body != null ? String(body.edited_html_body) : '';\nif (editedSubject && (/[\\r\\n]/.test(editedSubject) || editedSubject.length > 160)) throw new Error('EDITED_SUBJECT_INVALID');\nif (editedHtmlBody && (!/^<p>[\\s\\S]*<\\/p>$/.test(editedHtmlBody.trim()) || /<(script|iframe|object|style)\\b/i.test(editedHtmlBody))) throw new Error('EDITED_HTML_BODY_INVALID');\nreturn [{ json: { owner_id: ownerId, recipient_id: recipientId, edited_subject: editedSubject, edited_html_body: editedHtmlBody } }];"
       },
       "id": "07274b4f-f1f9-4197-926b-5c60a9974a6f",
       "name": "Validate Approve Request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        240,
+        720,
         224
       ]
     },
@@ -121,7 +121,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        480,
+        960,
         224
       ],
       "alwaysOutputData": true
@@ -155,7 +155,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        720,
+        1200,
         224
       ]
     },
@@ -172,7 +172,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        960,
+        1440,
         192
       ]
     },
@@ -189,7 +189,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        960,
+        1440,
         288
       ]
     },
@@ -212,14 +212,14 @@
     },
     {
       "parameters": {
-        "jsCode": "const body = $json.body ?? {};\nconst headers = $json.headers ?? {};\nconst ownerId = String(headers['x-owner-id'] ?? $env.OUTREACH_DEFAULT_OWNER_ID ?? '').trim();\nconst recipientId = String(body.recipient_id ?? '').trim();\nconst reason = String(body.reason ?? '').trim().slice(0, 500);\nif (!/^[0-9a-f-]{36}$/i.test(ownerId)) throw new Error('OWNER_ID_INVALID');\nif (!/^[0-9a-f-]{36}$/i.test(recipientId)) throw new Error('RECIPIENT_ID_INVALID');\nreturn [{ json: { owner_id: ownerId, recipient_id: recipientId, reason } }];"
+        "jsCode": "const body = $json.body ?? {};\nconst headers = $json.headers ?? {};\nconst ownerId = String($json.verified_owner_id ?? '').trim();\nconst recipientId = String(body.recipient_id ?? '').trim();\nconst reason = String(body.reason ?? '').trim().slice(0, 500);\nif (!/^[0-9a-f-]{36}$/i.test(ownerId)) throw new Error('OWNER_ID_INVALID');\nif (!/^[0-9a-f-]{36}$/i.test(recipientId)) throw new Error('RECIPIENT_ID_INVALID');\nreturn [{ json: { owner_id: ownerId, recipient_id: recipientId, reason } }];"
       },
       "id": "c27af620-637b-4978-b5d6-c71ae7f21c0e",
       "name": "Validate Reject Request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        240,
+        720,
         464
       ]
     },
@@ -236,7 +236,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        480,
+        960,
         464
       ],
       "alwaysOutputData": true
@@ -270,7 +270,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        720,
+        1200,
         464
       ]
     },
@@ -287,7 +287,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        960,
+        1440,
         432
       ]
     },
@@ -304,8 +304,152 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        960,
+        1440,
         528
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL + '/auth/v1/user' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $json.headers.authorization || 'Bearer none' }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "7151ffdb-c41b-49e9-935d-139857c8d8ef",
+      "name": "Verify User - List Reviews",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const res = $input.first().json;\nconst user = res.body ?? {};\nif (res.statusCode !== 200 || !/^[0-9a-f-]{36}$/i.test(String(user.id ?? ''))) {\n  throw new Error('AUTH_INVALID');\n}\nconst original = $('List Reviews Webhook').first();\nconst out = { json: { ...original.json, verified_owner_id: user.id } };\nif (original.binary) out.binary = original.binary;\nreturn [out];"
+      },
+      "id": "7c6758b8-2c2e-466a-949f-404b78eade8b",
+      "name": "Resolve Owner - List Reviews",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL + '/auth/v1/user' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $json.headers.authorization || 'Bearer none' }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "72016a44-4d96-4859-a219-cfdea0a79001",
+      "name": "Verify User - Approve Recipient",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        240,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const res = $input.first().json;\nconst user = res.body ?? {};\nif (res.statusCode !== 200 || !/^[0-9a-f-]{36}$/i.test(String(user.id ?? ''))) {\n  throw new Error('AUTH_INVALID');\n}\nconst original = $('Approve Recipient Webhook').first();\nconst out = { json: { ...original.json, verified_owner_id: user.id } };\nif (original.binary) out.binary = original.binary;\nreturn [out];"
+      },
+      "id": "5cc01c8f-cb47-440c-ab88-49336b596e2c",
+      "name": "Resolve Owner - Approve Recipient",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL + '/auth/v1/user' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $json.headers.authorization || 'Bearer none' }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "2ef84f62-3fff-44fe-ac1d-32df17d34feb",
+      "name": "Verify User - Reject Recipient",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        240,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const res = $input.first().json;\nconst user = res.body ?? {};\nif (res.statusCode !== 200 || !/^[0-9a-f-]{36}$/i.test(String(user.id ?? ''))) {\n  throw new Error('AUTH_INVALID');\n}\nconst original = $('Reject Recipient Webhook').first();\nconst out = { json: { ...original.json, verified_owner_id: user.id } };\nif (original.binary) out.binary = original.binary;\nreturn [out];"
+      },
+      "id": "de421249-83b5-4bd3-a690-04f7ff10f21f",
+      "name": "Resolve Owner - Reject Recipient",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        464
       ]
     }
   ],
@@ -315,7 +459,7 @@
       "main": [
         [
           {
-            "node": "Validate List Request",
+            "node": "Verify User - List Reviews",
             "type": "main",
             "index": 0
           }
@@ -359,7 +503,7 @@
       "main": [
         [
           {
-            "node": "Validate Approve Request",
+            "node": "Verify User - Approve Recipient",
             "type": "main",
             "index": 0
           }
@@ -410,7 +554,7 @@
       "main": [
         [
           {
-            "node": "Validate Reject Request",
+            "node": "Verify User - Reject Recipient",
             "type": "main",
             "index": 0
           }
@@ -451,6 +595,72 @@
         [
           {
             "node": "Respond Reject Conflict",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify User - List Reviews": {
+      "main": [
+        [
+          {
+            "node": "Resolve Owner - List Reviews",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Owner - List Reviews": {
+      "main": [
+        [
+          {
+            "node": "Validate List Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify User - Approve Recipient": {
+      "main": [
+        [
+          {
+            "node": "Resolve Owner - Approve Recipient",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Owner - Approve Recipient": {
+      "main": [
+        [
+          {
+            "node": "Validate Approve Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify User - Reject Recipient": {
+      "main": [
+        [
+          {
+            "node": "Resolve Owner - Reject Recipient",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Owner - Reject Recipient": {
+      "main": [
+        [
+          {
+            "node": "Validate Reject Request",
             "type": "main",
             "index": 0
           }
