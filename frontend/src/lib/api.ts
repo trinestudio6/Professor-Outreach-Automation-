@@ -4,10 +4,10 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || "https://n8n.trinism.tech/
 
 async function getAuthHeaders(includeContentType = true) {
   const { data: { session } } = await supabase.auth.getSession();
-  const ownerId = session?.user?.id || import.meta.env.VITE_DEFAULT_OWNER_ID || "test-owner-id";
-  
+  if (!session) throw new Error("NOT_AUTHENTICATED");
+
   const headers: Record<string, string> = {
-    "x-owner-id": ownerId
+    Authorization: `Bearer ${session.access_token}`,
   };
   
   if (includeContentType) {
